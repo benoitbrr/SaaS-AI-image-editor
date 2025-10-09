@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { getSupabaseAdmin } from '@/lib/supabase'
 import Replicate from 'replicate'
-
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN!,
-})
 
 export async function POST(request: NextRequest) {
   try {
+    // Vérifier les variables d'environnement
+    if (!process.env.REPLICATE_API_TOKEN) {
+      return NextResponse.json(
+        { error: 'Configuration manquante: REPLICATE_API_TOKEN' },
+        { status: 500 }
+      )
+    }
+
+    const replicate = new Replicate({
+      auth: process.env.REPLICATE_API_TOKEN,
+    })
+
+    const supabaseAdmin = getSupabaseAdmin()
+
     // Récupérer les données du formulaire
     const formData = await request.formData()
     const image = formData.get('image') as File
