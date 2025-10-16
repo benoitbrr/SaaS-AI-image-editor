@@ -4,6 +4,28 @@ import Replicate from 'replicate'
 
 export async function POST(request: NextRequest) {
   try {
+    // Vérifier l'authentification via le header Authorization
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.replace('Bearer ', '')
+    const supabaseAdmin = getSupabaseAdmin()
+    
+    // Vérifier le token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      )
+    }
+
     // Vérifier les variables d'environnement
     if (!process.env.REPLICATE_API_TOKEN) {
       return NextResponse.json(
@@ -15,8 +37,6 @@ export async function POST(request: NextRequest) {
     const replicate = new Replicate({
       auth: process.env.REPLICATE_API_TOKEN,
     })
-
-    const supabaseAdmin = getSupabaseAdmin()
 
     // Récupérer les données du formulaire
     const formData = await request.formData()
@@ -115,10 +135,11 @@ export async function POST(request: NextRequest) {
 
     const outputImageUrl = outputPublicUrlData.publicUrl
 
-    // 7. Sauvegarder dans la table projects
+    // 7. Sauvegarder dans la table projects avec user_id
     const { data: projectData, error: projectError } = await supabaseAdmin
       .from('projects')
       .insert({
+        user_id: user.id,
         input_image_url: inputImageUrl,
         output_image_url: outputImageUrl,
         prompt: prompt,
