@@ -14,73 +14,74 @@ export default function Header() {
   }
 
   return (
-    <header className="bg-white/5 backdrop-blur-lg border-b border-white/10 sticky top-0 z-50">
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
+    <header className="sticky top-0 z-50 bg-[rgba(4,5,18,0.85)] backdrop-blur-2xl shadow-[0_12px_32px_rgba(8,15,40,0.45)] border-b border-white/5">
+      <div className="container mx-auto px-4 py-3">
+        <div className="flex items-center justify-between gap-8">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-              <span className="text-white font-bold text-xl">🪄</span>
+          <Link href="/" className="group flex items-center gap-3">
+            <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 shadow-lg shadow-purple-800/40 transition-transform duration-300 group-hover:scale-[1.05]">
+              <div className="absolute inset-0 bg-white/15 blur-[18px]" />
+              <span className="relative text-xs font-bold uppercase tracking-[0.25em] text-white">
+                mir
+              </span>
             </div>
-            <span className="text-white font-bold text-xl hidden sm:block">
-              Magic Image Refiner
-            </span>
+            <div className="flex flex-col leading-tight text-slate-200">
+              <span className="text-base font-semibold uppercase tracking-[0.28em] text-slate-300 group-hover:text-white transition-colors hidden sm:block">
+                Magic Image
+              </span>
+              <span className="text-lg font-bold text-white hidden sm:block">
+                Refiner Studio
+              </span>
+            </div>
           </Link>
 
           {/* Navigation */}
-          <nav className="flex items-center gap-4">
+          <nav className="flex items-center gap-2">
             {!loading && (
               <>
                 {user ? (
                   <>
-                    {/* Dashboard Link */}
                     <Link
                       href="/dashboard"
-                      className={`hidden sm:block px-4 py-2 rounded-lg font-semibold transition-all ${
+                      className={`hidden sm:inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-all ${
                         pathname === '/dashboard'
-                          ? 'bg-white/20 text-white'
-                          : 'text-white/70 hover:text-white hover:bg-white/10'
+                          ? 'border-purple-400/60 bg-purple-500/10 text-white shadow-[0_8px_20px_rgba(99,102,241,0.25)]'
+                          : 'border-white/10 text-slate-300 hover:border-purple-400/40 hover:bg-purple-500/10 hover:text-white'
                       }`}
                     >
+                      <span className="inline-block h-2 w-2 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 shadow-[0_0_10px_rgba(99,102,241,0.7)]" />
                       Dashboard
                     </Link>
 
-                    {/* User Info */}
-                    <div className="hidden md:flex items-center gap-2 bg-white/10 px-4 py-2 rounded-lg">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
-                        <span className="text-white font-semibold text-sm">
-                          {user.email?.[0].toUpperCase()}
-                        </span>
+                    <div className="hidden md:flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 shadow-inner shadow-white/5">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-semibold text-white uppercase">
+                        {user.email?.[0].toUpperCase()}
                       </div>
-                      <span className="text-white/90 text-sm max-w-[150px] truncate">
+                      <span className="max-w-[160px] truncate text-sm text-slate-200">
                         {user.email}
                       </span>
                     </div>
 
-                    {/* Sign Out Button */}
                     <button
                       onClick={handleSignOut}
-                      className="bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-4 py-2 rounded-lg transition-all"
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-sm font-semibold text-slate-200 transition-all hover:border-red-400/50 hover:bg-red-500/10 hover:text-white"
                     >
                       Déconnexion
                     </button>
                   </>
                 ) : (
                   <>
-                    {/* Login Button */}
                     <Link
                       href="/login"
-                      className="bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-4 py-2 rounded-lg transition-all"
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-sm font-semibold text-slate-200 transition-all hover:border-slate-300/60 hover:bg-white/10 hover:text-white"
                     >
                       Connexion
                     </Link>
-
-                    {/* Sign Up Button */}
                     <Link
                       href="/signup"
-                      className="bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:shadow-lg hover:shadow-purple-500/50 transition-all"
+                      className="inline-flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(124,58,237,0.35)] transition-transform duration-300 hover:scale-[1.03] hover:shadow-[0_16px_40px_rgba(124,58,237,0.45)]"
                     >
-                      S&apos;inscrire
+                      Commencer
                     </Link>
                   </>
                 )}
