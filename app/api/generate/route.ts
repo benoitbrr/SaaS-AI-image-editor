@@ -82,15 +82,38 @@ export async function POST(request: NextRequest) {
 
     // 3. Appeler Replicate avec l'URL de l'image et le prompt
     console.log('Génération avec Replicate (Google Nano-Banana)...')
-    const output = await replicate.run(
-      "google/nano-banana",
-      {
+    let output: any
+
+    try {
+      output = await replicate.run("google/nano-banana", {
         input: {
-          prompt: prompt,
-          image_input: [inputImageUrl]
-        }
+          prompt,
+          image_input: [inputImageUrl],
+        },
+      })
+    } catch (generationError) {
+      const message = generationError instanceof Error ? generationError.message : String(generationError)
+
+      if (message.includes('flagged as sensitive') || message.includes('E005')) {
+        // Nettoyer l'image uploadée puisqu'on ne l'utilisera pas
+        await supabaseAdmin.storage.from('input-images').remove([inputFileName])
+
+        return NextResponse.json(
+          {
+            error:
+              'Le modèle a signalé ce contenu comme sensible. Merci de modifier votre prompt ou de choisir une autre image.',
+            code: 'SENSITIVE_CONTENT',
+          },
+          { status: 400 }
+        )
       }
-    ) as any
+
+      console.error('Erreur Replicate:', generationError)
+      return NextResponse.json(
+        { error: 'Erreur lors de la génération avec Replicate' },
+        { status: 502 }
+      )
+    }
 
     // Nano-banana retourne un objet avec une méthode url()
     const generatedImageUrl = typeof output?.url === 'function' ? output.url() : 
