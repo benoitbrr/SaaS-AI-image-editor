@@ -9,8 +9,13 @@ export default function Header() {
   const { user, signOut, loading } = useAuth()
 
   const handleSignOut = async () => {
-    await signOut()
-    window.location.href = '/'
+    try {
+      await signOut()
+      window.location.href = '/'
+    } catch (error) {
+      console.error('Sign out failed', error)
+      alert("Impossible de vous déconnecter pour le moment. Veuillez réessayer.")
+    }
   }
 
   return (
