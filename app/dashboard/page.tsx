@@ -14,6 +14,8 @@ interface Project {
   output_image_url: string
   prompt: string
   status: string
+  payment_status: string
+  payment_amount: number
 }
 
 export default function DashboardPage() {
@@ -27,7 +29,9 @@ export default function DashboardPage() {
   const [previewUrl, setPreviewUrl] = useState<string>('')
   const [prompt, setPrompt] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState<boolean>(false)
+  const [isCreatingCheckout, setIsCreatingCheckout] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
+  const [pendingProject, setPendingProject] = useState<Project | null>(null)
 
   // Redirect si non authentifié
   useEffect(() => {
@@ -42,6 +46,17 @@ export default function DashboardPage() {
       loadProjects()
     }
   }, [user])
+
+  // Vérifier s'il y a un projet en attente de paiement
+  useEffect(() => {
+    const checkPendingProjects = () => {
+      const pending = projects.find(
+        (p) => p.payment_status === 'paid' && p.status === 'pending'
+      )
+      setPendingProject(pending || null)
+    }
+    checkPendingProjects()
+  }, [projects])
 
   const loadProjects = async () => {
     try {
@@ -75,7 +90,7 @@ export default function DashboardPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    console.log('🚀 handleSubmit appelé')
+    console.log('🚀 handleSubmit appelé - Création de checkout session')
     console.log('selectedImage:', selectedImage)
     console.log('prompt:', prompt)
     
@@ -84,7 +99,7 @@ export default function DashboardPage() {
       return
     }
 
-    setIsGenerating(true)
+    setIsCreatingCheckout(true)
     setError('')
 
     try {
@@ -101,8 +116,8 @@ export default function DashboardPage() {
       formData.append('image', selectedImage)
       formData.append('prompt', prompt)
 
-      console.log('📤 Envoi de la requête à /api/generate...')
-      const response = await fetch('/api/generate', {
+      console.log('📤 Envoi de la requête à /api/create-checkout-session...')
+      const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -115,6 +130,47 @@ export default function DashboardPage() {
       console.log('📊 Data:', data)
 
       if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de la création de la session de paiement')
+      }
+
+      console.log('✅ Redirection vers Stripe Checkout...')
+      
+      // Rediriger vers Stripe Checkout
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl
+      }
+    } catch (err) {
+      console.error('❌ Erreur dans handleSubmit:', err)
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue')
+      setIsCreatingCheckout(false)
+    }
+  }
+
+  const handleGenerate = async (projectId: string) => {
+    setIsGenerating(true)
+    setError('')
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('Session expirée')
+      }
+
+      const formData = new FormData()
+      formData.append('projectId', projectId)
+
+      console.log('📤 Lancement de la génération pour le projet:', projectId)
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
         throw new Error(data.error || 'Erreur lors de la génération')
       }
 
@@ -123,12 +179,10 @@ export default function DashboardPage() {
       // Recharger les projets
       await loadProjects()
       
-      // Reset form
-      setSelectedImage(null)
-      setPreviewUrl('')
-      setPrompt('')
+      // Retirer le projet en attente
+      setPendingProject(null)
     } catch (err) {
-      console.error('❌ Erreur dans handleSubmit:', err)
+      console.error('❌ Erreur dans handleGenerate:', err)
       setError(err instanceof Error ? err.message : 'Une erreur est survenue')
     } finally {
       setIsGenerating(false)
@@ -327,13 +381,57 @@ export default function DashboardPage() {
                 </div>
               )}
 
+              {/* Pending Project Alert */}
+              {pendingProject && (
+                <div className="rounded-2xl border border-green-500/40 bg-green-500/15 px-4 py-3 text-green-100 backdrop-blur-sm">
+                  <p className="mb-2 font-semibold">✅ Paiement effectué !</p>
+                  <p className="mb-3 text-sm">Votre paiement a été confirmé. Vous pouvez maintenant lancer la génération de votre image.</p>
+                  <button
+                    onClick={() => handleGenerate(pendingProject.id)}
+                    disabled={isGenerating}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-transparent bg-gradient-to-r from-emerald-500 to-teal-500 px-4 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(16,185,129,0.35)] transition-transform duration-300 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <svg
+                          className="h-4 w-4 animate-spin"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        <span>Génération en cours...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🚀</span>
+                        <span>Lancer la génération</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isGenerating || !selectedImage || !prompt}
+                disabled={isCreatingCheckout || isGenerating || !selectedImage || !prompt}
                 className="group inline-flex h-14 w-full items-center justify-center gap-3 rounded-2xl border border-transparent bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-6 text-base font-semibold text-white shadow-[0_20px_46px_rgba(129,140,248,0.35)] transition-transform duration-300 focus:outline-none focus:ring-4 focus:ring-purple-500/40 disabled:cursor-not-allowed disabled:opacity-60 hover:scale-[1.03] hover:shadow-[0_28px_56px_rgba(129,140,248,0.45)]"
               >
-                {isGenerating ? (
+                {isCreatingCheckout ? (
                   <span className="flex items-center gap-3">
                     <svg
                       className="h-5 w-5 animate-spin text-white"
@@ -355,12 +453,12 @@ export default function DashboardPage() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    <span>Lancement de la génération…</span>
+                    <span>Redirection vers le paiement...</span>
                   </span>
                 ) : (
                   <span className="flex items-center gap-3">
                     <span className="inline-block h-2 w-2 rounded-full bg-white shadow-[0_0_14px_rgba(255,255,255,0.8)] transition-transform group-hover:scale-125" />
-                    <span>Lancer la génération</span>
+                    <span>Générer (2,00 €)</span>
                   </span>
                 )}
               </button>
@@ -416,7 +514,7 @@ export default function DashboardPage() {
             <div className="py-12 text-center text-white/70">
               Chargement de vos projets...
             </div>
-          ) : projects.length === 0 ? (
+          ) : projects.filter(p => p.output_image_url && p.status === 'completed').length === 0 ? (
             <div className="py-12 text-center">
               <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500/25 to-purple-500/25 text-white/50">
                 <svg className="h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -428,7 +526,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {projects.map((project) => (
+              {projects.filter(p => p.output_image_url && p.status === 'completed').map((project) => (
                 <div
                   key={project.id}
                   className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] transition-all hover:border-white/30 hover:bg-white/[0.07]"

@@ -26,6 +26,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Récupérer les données du formulaire
+    const formData = await request.formData()
+    const projectId = formData.get('projectId') as string
+
+    if (!projectId) {
+      return NextResponse.json(
+        { error: 'projectId est requis' },
+        { status: 400 }
+      )
+    }
+
+    // Récupérer le projet et vérifier le payment_status
+    const { data: project, error: fetchProjectError } = await supabaseAdmin
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (fetchProjectError || !project) {
+      return NextResponse.json(
+        { error: 'Projet introuvable' },
+        { status: 404 }
+      )
+    }
+
+    // IMPORTANT: Vérifier que le paiement a été effectué
+    if (project.payment_status !== 'paid') {
+      return NextResponse.json(
+        { error: 'Le paiement n\'a pas été effectué pour ce projet' },
+        { status: 403 }
+      )
+    }
+
     // Vérifier les variables d'environnement
     if (!process.env.REPLICATE_API_TOKEN) {
       return NextResponse.json(
@@ -34,53 +68,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Mettre à jour le status à 'processing'
+    await supabaseAdmin
+      .from('projects')
+      .update({ status: 'processing' })
+      .eq('id', projectId)
+
     const replicate = new Replicate({
       auth: process.env.REPLICATE_API_TOKEN,
     })
 
-    // Récupérer les données du formulaire
-    const formData = await request.formData()
-    const image = formData.get('image') as File
-    const prompt = formData.get('prompt') as string
+    const inputImageUrl = project.input_image_url
+    const prompt = project.prompt
 
-    if (!image || !prompt) {
-      return NextResponse.json(
-        { error: 'Image et prompt sont requis' },
-        { status: 400 }
-      )
-    }
-
-    // Convertir l'image en buffer
-    const arrayBuffer = await image.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-
-    // 1. Upload l'image d'entrée dans Supabase Storage
-    const inputFileName = `${Date.now()}-${image.name}`
-    const { data: uploadData, error: uploadError } = await supabaseAdmin
-      .storage
-      .from('input-images')
-      .upload(inputFileName, buffer, {
-        contentType: image.type,
-        cacheControl: '3600',
-      })
-
-    if (uploadError) {
-      console.error('Erreur upload Supabase:', uploadError)
-      return NextResponse.json(
-        { error: 'Erreur lors de l\'upload de l\'image' },
-        { status: 500 }
-      )
-    }
-
-    // 2. Récupérer l'URL publique de l'image uploadée
-    const { data: publicUrlData } = supabaseAdmin
-      .storage
-      .from('input-images')
-      .getPublicUrl(inputFileName)
-
-    const inputImageUrl = publicUrlData.publicUrl
-
-    // 3. Appeler Replicate avec l'URL de l'image et le prompt
+    // Appeler Replicate avec l'URL de l'image et le prompt
     console.log('Génération avec Replicate (Google Nano-Banana)...')
     let output: any
 
@@ -95,8 +96,11 @@ export async function POST(request: NextRequest) {
       const message = generationError instanceof Error ? generationError.message : String(generationError)
 
       if (message.includes('flagged as sensitive') || message.includes('E005')) {
-        // Nettoyer l'image uploadée puisqu'on ne l'utilisera pas
-        await supabaseAdmin.storage.from('input-images').remove([inputFileName])
+        // Mettre à jour le status à 'failed'
+        await supabaseAdmin
+          .from('projects')
+          .update({ status: 'failed' })
+          .eq('id', projectId)
 
         return NextResponse.json(
           {
@@ -109,6 +113,13 @@ export async function POST(request: NextRequest) {
       }
 
       console.error('Erreur Replicate:', generationError)
+      
+      // Mettre à jour le status à 'failed'
+      await supabaseAdmin
+        .from('projects')
+        .update({ status: 'failed' })
+        .eq('id', projectId)
+
       return NextResponse.json(
         { error: 'Erreur lors de la génération avec Replicate' },
         { status: 502 }
@@ -121,18 +132,23 @@ export async function POST(request: NextRequest) {
                                (Array.isArray(output) ? output[0] : output?.url || output))
 
     if (!generatedImageUrl) {
+      await supabaseAdmin
+        .from('projects')
+        .update({ status: 'failed' })
+        .eq('id', projectId)
+
       return NextResponse.json(
         { error: 'Aucune image générée par Replicate' },
         { status: 500 }
       )
     }
 
-    // 4. Télécharger l'image générée depuis Replicate
+    // Télécharger l'image générée depuis Replicate
     const imageResponse = await fetch(generatedImageUrl)
     const imageBlob = await imageResponse.blob()
     const imageBuffer = Buffer.from(await imageBlob.arrayBuffer())
 
-    // 5. Upload l'image générée dans Supabase Storage
+    // Upload l'image générée dans Supabase Storage
     const outputFileName = `${Date.now()}-generated.png`
     const { data: outputUploadData, error: outputUploadError } = await supabaseAdmin
       .storage
@@ -144,13 +160,19 @@ export async function POST(request: NextRequest) {
 
     if (outputUploadError) {
       console.error('Erreur upload image générée:', outputUploadError)
+      
+      await supabaseAdmin
+        .from('projects')
+        .update({ status: 'failed' })
+        .eq('id', projectId)
+
       return NextResponse.json(
         { error: 'Erreur lors de l\'upload de l\'image générée' },
         { status: 500 }
       )
     }
 
-    // 6. Récupérer l'URL publique de l'image générée
+    // Récupérer l'URL publique de l'image générée
     const { data: outputPublicUrlData } = supabaseAdmin
       .storage
       .from('output-images')
@@ -158,30 +180,27 @@ export async function POST(request: NextRequest) {
 
     const outputImageUrl = outputPublicUrlData.publicUrl
 
-    // 7. Sauvegarder dans la table projects avec user_id
-    const { data: projectData, error: projectError } = await supabaseAdmin
+    // Mettre à jour le projet avec l'image générée et status='completed'
+    const { data: updatedProject, error: updateProjectError } = await supabaseAdmin
       .from('projects')
-      .insert({
-        user_id: user.id,
-        input_image_url: inputImageUrl,
+      .update({
         output_image_url: outputImageUrl,
-        prompt: prompt,
         status: 'completed',
       })
+      .eq('id', projectId)
       .select()
       .single()
 
-    if (projectError) {
-      console.error('Erreur sauvegarde projet:', projectError)
-      // On continue même si la sauvegarde échoue
+    if (updateProjectError) {
+      console.error('Erreur mise à jour projet:', updateProjectError)
     }
 
-    // 8. Retourner l'URL de l'image générée
+    // Retourner l'URL de l'image générée
     return NextResponse.json({
       success: true,
       outputImageUrl: outputImageUrl,
       inputImageUrl: inputImageUrl,
-      projectId: projectData?.id,
+      projectId: projectId,
     })
 
   } catch (error) {
