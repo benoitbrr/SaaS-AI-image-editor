@@ -34,53 +34,23 @@ export async function POST(request: NextRequest) {
     }
     console.log('✅ [Checkout] Auth OK')
 
-    // Récupérer les données du formulaire
-    console.log('📦 [Checkout] Lecture formData...')
-    const formData = await request.formData()
-    const image = formData.get('image') as File
-    const prompt = formData.get('prompt') as string
+    // Récupérer les données JSON envoyées depuis le client
+    console.log('📦 [Checkout] Lecture payload JSON...')
+    const body = await request.json()
+    const { inputImageUrl, prompt } = body as {
+      inputImageUrl?: string
+      prompt?: string
+    }
 
-    if (!image || !prompt) {
+    if (!inputImageUrl || typeof inputImageUrl !== 'string' || !prompt || typeof prompt !== 'string') {
       return NextResponse.json(
-        { error: 'Image et prompt sont requis' },
+        { error: 'inputImageUrl et prompt sont requis' },
         { status: 400 }
       )
     }
-    console.log(`✅ [Checkout] FormData OK - Image: ${image.name} (${(image.size / 1024).toFixed(2)} KB)`)
+    console.log('✅ [Checkout] Payload reçu - URL:', inputImageUrl)
 
-    // 1. Upload l'image d'entrée dans Supabase Storage
-    console.log('📤 [Checkout] Upload image vers Supabase...')
-    const startUpload = Date.now()
-    const arrayBuffer = await image.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-    const inputFileName = `${Date.now()}-${image.name}`
-    
-    const { data: uploadData, error: uploadError } = await supabaseAdmin
-      .storage
-      .from('input-images')
-      .upload(inputFileName, buffer, {
-        contentType: image.type,
-        cacheControl: '3600',
-      })
-
-    if (uploadError) {
-      console.error('❌ [Checkout] Erreur upload Supabase:', uploadError)
-      return NextResponse.json(
-        { error: 'Erreur lors de l\'upload de l\'image' },
-        { status: 500 }
-      )
-    }
-    console.log(`✅ [Checkout] Upload OK en ${Date.now() - startUpload}ms`)
-
-    // 2. Récupérer l'URL publique de l'image uploadée
-    const { data: publicUrlData } = supabaseAdmin
-      .storage
-      .from('input-images')
-      .getPublicUrl(inputFileName)
-
-    const inputImageUrl = publicUrlData.publicUrl
-
-    // 3. Créer un projet avec status='pending' et payment_status='pending'
+    // Créer un projet avec status='pending' et payment_status='pending'
     console.log('💾 [Checkout] Création du projet...')
     const startInsert = Date.now()
     const { data: projectData, error: projectError } = await supabaseAdmin

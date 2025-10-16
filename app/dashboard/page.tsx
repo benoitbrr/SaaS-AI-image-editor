@@ -112,17 +112,44 @@ export default function DashboardPage() {
         throw new Error('Session expirée')
       }
 
-      const formData = new FormData()
-      formData.append('image', selectedImage)
-      formData.append('prompt', prompt)
+      const fileExt = selectedImage.name.split('.').pop()?.toLowerCase() || 'png'
+      const filePath = `${session.user.id}/${Date.now()}.${fileExt}`
+
+      console.log("📤 Upload de l'image vers Supabase Storage...", filePath)
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('input-images')
+        .upload(filePath, selectedImage, {
+          cacheControl: '3600',
+          contentType: selectedImage.type || 'application/octet-stream',
+          upsert: false,
+        })
+
+      if (uploadError) {
+        throw new Error("Erreur lors de l'upload de l'image")
+      }
+
+      const path = uploadData?.path || filePath
+      const { data: publicUrlData } = supabase.storage
+        .from('input-images')
+        .getPublicUrl(path)
+
+      const inputImageUrl = publicUrlData?.publicUrl
+
+      if (!inputImageUrl) {
+        throw new Error("Impossible de récupérer l'URL publique de l'image")
+      }
 
       console.log('📤 Envoi de la requête à /api/create-checkout-session...')
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
         },
-        body: formData,
+        body: JSON.stringify({
+          prompt,
+          inputImageUrl,
+        }),
       })
 
       console.log('📥 Réponse reçue, status:', response.status)
